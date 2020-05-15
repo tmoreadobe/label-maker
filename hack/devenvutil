@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+
+#
+# Copyright 2020 Alexander Vollschwitz
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+#
+# Note: All variables defined in Makefile can be directly accessed here.
+#
+
+# shellcheck disable=SC2034
+{
+# formatting
+BLD="\e[1m"
+DIM="\e[2m"
+ITL="\e[3m"
+NRM="\e[0m"
+OK="\e[01;32m"
+ERR="\e[01;31m"
+}
+
+#
+#
+#
+function synopsis {
+
+    shopt -s extglob
+    local file
+    file="$(echo "${MAKEFILE_LIST##+([[:space:]])}" | cut -d ' ' -f 1)"
+
+    echo -e "\n${BLD}TARGETS${NRM}"
+    print_formatted_help "$(
+        awk '{FS=":"}
+            /^[-a-zA-Z0-9_]+:[-a-zA-Z0-9_ ]*$/{f=1; printf "\n${ITL}${BLD}%s${NRM}\n", $1; next}
+            /^[^#].*$/{f=0} f' "${file}" \
+         | tr -d '#')"
+
+    echo -e "\n\n${BLD}NOTES${NRM}\n"
+    print_formatted_help "$(
+        awk '/^##$/{f=1; printf "-%s", $0; next} /^[^#].*$/{f=0} f' "${file}" \
+         | tr -d '#')"
+    echo
+}
+
+#
+# $1	help text
+#
+function print_formatted_help {
+    echo -e "$(apply_shell_expansion "$1")" | uniq
+}
+
+#
+# $1	string to expand
+#
+function apply_shell_expansion {
+    declare data="$1"
+    declare delimiter="__apply_shell_expansion_delimiter__"
+    declare command="cat <<${delimiter}"$'\n'"${data}"$'\n'"${delimiter}"
+    eval "${command}"
+}
+
+#
+# $1	parameter name
+# $2	parameter value
+#
+function ensure_defined {
+    if [[ $# -ne 2 || -z "$2" ]]; then
+        echo -e \
+"\nparameter ${ITL}$1${NRM} is not set, please check your ${DIM}.makerc${NRM} file\n"
+        exit 1
+    fi
+}
+
+#
+# $1	prefix string for generated ID
+# $2	number of characters; defaults to 8
+#
+function random_id {
+    local len=8
+    [[ $# -lt 2 || -z "$2" ]] || len="$2"
+    echo "$1-$(tr -dc 'a-z0-9' < /dev/urandom | fold -w "${len}" | head -n 1)"
+}
+
+#
+# $1    prefix string for generated container name
+# $2    make goals, space separated; optional
+#
+function container_name {
+    local prefix="$1"
+    [[ $# -lt 2 || -z "$2" ]] || prefix="$1-$(echo "$2" | cut -d ' ' -f 1)"
+    random_id "${prefix}"
+}
+
+#
+# $1    container name prefix
+#
+function stop_container {
+    echo "stopping containers '$1*'..."
+    local ids
+    ids="$(docker ps --filter "name=$1" --quiet)"
+    if [[ -n "${ids}" ]]; then
+        # shellcheck disable=SC2086
+        docker stop ${ids}
+    else
+        echo "no containers to stop"
+    fi
+}
+
+#
+# $1    image name
+# $2    path to Dockerfile for image
+#
+function ensure_image_exists {
+
+    local image
+    image="$1:$(calculate_image_tag "$2")"
+
+    if image_present "${image}"; then
+        return
+    fi
+
+    if [[ -n "$(docker images -q "$1")" ]]; then
+
+        echo -e "\nCurrently present $1 images:\n"
+        docker images "$1"
+        echo
+
+        if build_image "$1" "$2" "None of these images matches the current \
+Dockerfile for $1. Would you like to re-build the image?" 0; then
+            return
+        fi
+
+    elif build_image "$1" "$2" "There is no $1 image present. Would you like \
+to build it now?" 1; then
+        return
+    fi
+
+    echo -e "stopping\n"
+    exit 1
+}
+
+#
+# $1    image name
+# $2    path to Dockerfile for image
+# $3    prompt (optional)
+# $4    return value for "no" answer (required if $3 present, omit otherwise)
+#
+function build_image {
+
+    if [[ -n "$3" ]]; then
+        read -r -p "$3 [y/N]: " answer
+        if [[ "${answer}" != "y" ]]; then
+            return "$4"
+        fi
+    fi
+
+    echo
+
+    local image
+    image="$1:$(calculate_image_tag "$2")"
+	docker build \
+		--build-arg "USER_ID=$(id -u)" --build-arg "GROUP_ID=$(id -g)" \
+		--build-arg "DOCKER_GROUP_ID=$(getent group docker | cut -d ':' -f 3)" \
+		-f "$2" -t "${image}" .
+	set_latest_tag "${image}"
+}
+
+#
+# Sets the latest tag to the referenced image.
+#
+# $1    image ref as name:tag
+#
+function set_latest_tag {
+
+    local latest
+    latest="$(get_image_name "$1"):latest"
+
+    if docker image inspect "${latest}" > /dev/null 2>&1 \
+        && ! docker rmi "${latest}" > /dev/null; then
+        echo "Could not untag ${latest}. devenv active in another shell?"
+        exit 1
+    fi
+
+    if ! docker tag "$1" "${latest}"; then
+        echo "setting latest tag to image $1 failed"
+        exit 1
+    fi
+}
+
+#
+# $1    image ref as name:tag
+#
+function remove_image {
+    if docker image inspect "$1" > /dev/null 2>&1 && ! docker rmi "$1"; then
+        echo "Could not remove image $1. devenv active in another shell?"
+        exit 1
+    fi
+}
+
+#
+# $1    image ref as name:tag
+#
+function image_present {
+    docker image inspect "$1" > /dev/null 2>&1
+}
+
+#
+# $1    image ref as name:tag
+#
+function get_image_name {
+    echo -n "$1" | cut -d':' -f1
+}
+
+#
+# $1    path to Dockerfile for image
+#
+function calculate_image_tag {
+    git hash-object "$1" | head -c 12
+}
+
+#
+# $1    make goals
+#
+function start_devenv_container {
+
+    ensure_image_exists "${CONTAINER_IMAGE}" hack/devenv.Dockerfile
+
+    echo "invoking goal '$1' inside devel container..."
+
+    mkdir -p "${BINARIES}"
+
+    # shellcheck disable=SC2086
+    docker run --rm -ti --net=host \
+        -e DOCKERIZE=n -e DEBUG -e VERBOSE -e TERM=xterm-256color \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v "${PWD}/${BINARIES}:/go/bin" ${CACHE_VOLS} \
+        -v "/home/${USER}/.docker:/home/go/.docker" \
+        -v "/home/${USER}/.kube:/home/go/.kube" \
+        -v "${PWD}:/go/src/label-maker" \
+        -w /go/src/label-maker --hostname label-maker \
+        --name "$(container_name "${CONTAINER_PREFIX}-${USER}" "$1")" \
+        "${CONTAINER_IMAGE}:$(calculate_image_tag hack/devenv.Dockerfile)" \
+        make $1
+}
+
+#
+#
+#
+
+"$@"
