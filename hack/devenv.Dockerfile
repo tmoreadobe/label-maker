@@ -27,7 +27,7 @@ ARG KUBE_PKG_VERSION="1.16.8-00"
 
 # tool versions
 
-ARG OPSDK_VERSION="0.12.0"
+ARG OPSDK_VERSION="0.15.2"
 
 #
 # Add a standard, non-root user based on USER_ID and GROUP_ID passed as build
@@ -42,12 +42,12 @@ ARG USER_ID
 ARG GROUP_ID
 ARG DOCKER_GROUP_ID
 
-RUN groupadd -g ${GROUP_ID:-1000} go && \
-	useradd -l -u ${USER_ID:-1000} -g go go && \
-	install -d -m 0755 -o go -g go /home/go && \
-	groupadd -g ${DOCKER_GROUP_ID:-127} docker && \
-	usermod -aG docker go
-
+RUN groupadd -g 200 go && \
+    useradd -l -u ${USER_ID:-1000} -g go go && \
+    install -d -m 0755 -o go -g go /home/go && \
+    groupadd -g 1001 docker && \
+    usermod -aG docker go
+RUN chown -R go:go /go
 # install required packages
 RUN \
     apt-get update && \
@@ -100,7 +100,7 @@ ARG OPSDK_ASC_URL="https://github.com/operator-framework/operator-sdk/releases/d
 RUN curl -fsSL "${OPSDK_URL}" -o operator-sdk && \
 	curl -fsSL "${OPSDK_ASC_URL}" -o operator-sdk.asc && \
 	gpg --keyserver keyserver.ubuntu.com \
-		--recv-key "0CF50BEE7E4DF6445E08C0EA9AFDE59E90D2B445" && \
+		--recv-key "A75BBA1528FE0D8E3C6AE5086B1D07CB9391EA2A" && \
 	gpg --verify operator-sdk.asc && \
 	mv operator-sdk /usr/local/bin/operator-sdk && \
 	chmod +x /usr/local/bin/operator-sdk && \

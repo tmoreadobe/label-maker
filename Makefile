@@ -35,7 +35,9 @@ BINARIES=$(BUILD_OUTPUT)/bin
 CONTAINER_PREFIX=label-maker
 CONTAINER_IMAGE=label-maker-devenv
 GO_PREAMBLE=CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GIT_TERMINAL_PROMPT=1
-
+REGISTRY=tushar8408
+REPO=label-maker
+#${ITL}VERBOSE=y${NRM}
 ##
 # You can set the following environment variables when calling make:
 #
@@ -59,12 +61,12 @@ else
     MAKEFLAGS += -s
 endif
 
-ISOLATED ?=
-ifeq ($(ISOLATED),y)
-    CACHE_VOLS=
-else
-    CACHE_VOLS=-v ${GOPATH}/pkg:/go/pkg -v /home/${USER}/.cache:/home/go/.cache
-endif
+#ISOLATED ?=
+#ifeq ($(ISOLATED),y)
+CACHE_VOLS=
+#else
+#    CACHE_VOLS=-v ${GOPATH}/pkg:/go/pkg -v /home/${USER}/.cache:/home/go/.cache
+#endif
 
 #
 # If DOCKERIZE is not set, we set it to 'y' to flag that Dockerization is

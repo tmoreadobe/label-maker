@@ -30,7 +30,7 @@ NRM="\e[0m"
 OK="\e[01;32m"
 ERR="\e[01;31m"
 }
-
+set -x
 #
 #
 #
@@ -171,8 +171,9 @@ function build_image {
     local image
     image="$1:$(calculate_image_tag "$2")"
 	docker build \
-		--build-arg "USER_ID=$(id -u)" --build-arg "GROUP_ID=$(id -g)" \
-		--build-arg "DOCKER_GROUP_ID=$(getent group docker | cut -d ':' -f 3)" \
+		--build-arg "USER_ID=$(id -u)" --build-arg "GROUP_ID=200" \
+		--build-arg "DOCKER_GROUP_ID=1001" \
+        --platform "linux/amd64" \
 		-f "$2" -t "${image}" .
 	set_latest_tag "${image}"
 }
@@ -249,6 +250,7 @@ function start_devenv_container {
         -v "/home/${USER}/.docker:/home/go/.docker" \
         -v "/home/${USER}/.kube:/home/go/.kube" \
         -v "${PWD}:/go/src/label-maker" \
+        --platform "linux/amd64" \
         -w /go/src/label-maker --hostname label-maker \
         --name "$(container_name "${CONTAINER_PREFIX}-${USER}" "$1")" \
         "${CONTAINER_IMAGE}:$(calculate_image_tag hack/devenv.Dockerfile)" \
@@ -260,3 +262,4 @@ function start_devenv_container {
 #
 
 "$@"
+set +x

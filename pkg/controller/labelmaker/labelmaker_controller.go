@@ -1,17 +1,17 @@
 /*
-	Copyright 2020 Alexander Vollschwitz
+Copyright 2020 Alexander Vollschwitz
 
-	Licensed under the Apache License, Version 2.0 (the "License");
-	you may not use this file except in compliance with the License.
-	You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-	    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
-	Unless required by applicable law or agreed to in writing, software
-	distributed under the License is distributed on an "AS IS" BASIS,
-	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-	See the License for the specific language governing permissions and
-	limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 package labelmaker
 
@@ -33,15 +33,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-//
 var controllerLog = util.NewControllerLogger("labelmaker.controller")
 
-//
 func Add(mgr manager.Manager) error {
 	return add(mgr, newReconciler(mgr))
 }
 
-//
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	ret := &LabelMaker{client: mgr.GetClient()}
 	label, set := getRoleLabel()
@@ -54,7 +51,6 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	return ret
 }
 
-//
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	c, err := controller.New("labelmaker-controller", mgr,
@@ -72,10 +68,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	return nil
 }
 
-//
 var _ reconcile.Reconciler = &LabelMaker{}
 
-//
 type LabelMaker struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the API server
@@ -83,7 +77,6 @@ type LabelMaker struct {
 	roleLabel string
 }
 
-//
 func (lm *LabelMaker) Reconcile(req reconcile.Request) (reconcile.Result, error) {
 
 	log := controllerLog.LoggerForRequest("node", req)
@@ -103,7 +96,6 @@ func (lm *LabelMaker) Reconcile(req reconcile.Request) (reconcile.Result, error)
 	return lm.handle(node)
 }
 
-//
 func (lm *LabelMaker) handle(node *core_v1.Node) (reconcile.Result, error) {
 
 	log := controllerLog.LoggerForNode(node)
@@ -123,7 +115,7 @@ func (lm *LabelMaker) handle(node *core_v1.Node) (reconcile.Result, error) {
 
 	log.Info("setting node-role", "role", role)
 	labels[fmt.Sprintf("node-role.kubernetes.io/%s", role)] = ""
-
+	node = &core_v1.Node{}
 	err := util.UpdateNode(lm.client, node,
 		func(n *core_v1.Node) {
 			n.SetLabels(labels)
@@ -135,7 +127,6 @@ func (lm *LabelMaker) handle(node *core_v1.Node) (reconcile.Result, error) {
 	return res, nil
 }
 
-//
 func getRoleLabel() (string, bool) {
 	label := os.Getenv("ROLE_LABEL")
 	if label == "" {
