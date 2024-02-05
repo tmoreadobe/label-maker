@@ -17,14 +17,15 @@ package labelmaker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/xelalexv/label-maker/pkg/controller/util"
-
 	core_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -97,7 +98,6 @@ func (lm *LabelMaker) Reconcile(req reconcile.Request) (reconcile.Result, error)
 }
 
 func (lm *LabelMaker) handle(node *core_v1.Node) (reconcile.Result, error) {
-
 	log := controllerLog.LoggerForNode(node)
 	res := reconcile.Result{}
 
@@ -107,21 +107,33 @@ func (lm *LabelMaker) handle(node *core_v1.Node) (reconcile.Result, error) {
 		return res, log.Debug("no role label present")
 	}
 
-	for k, _ := range labels {
-		if strings.HasPrefix(k, "node-role.kubernetes.io/") {
-			return res, log.Debug("node-role already set")
-		}
+	// Check if the desired label already exists
+	if _, exists := labels[fmt.Sprintf("node-role.kubernetes.io/%s", role)]; exists {
+		return res, log.Debug("node-role already set")
 	}
 
 	log.Info("setting node-role", "role", role)
 	labels[fmt.Sprintf("node-role.kubernetes.io/%s", role)] = ""
-	node = &core_v1.Node{}
-	err := util.UpdateNode(lm.client, node,
-		func(n *core_v1.Node) {
-			n.SetLabels(labels)
-		})
+
+	// Server-side apply using strategic merge patch
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		nodeCopy := node.DeepCopy()
+		nodeCopy.SetLabels(labels)
+
+		// Marshal the modified nodeCopy to JSON for patching
+		patchBytes, err := json.Marshal(nodeCopy)
+		if err != nil {
+			return err
+		}
+
+		// Use client.Patch for types.StrategicMergePatchType
+		err = lm.client.Patch(context.TODO(), node, client.RawPatch(types.StrategicMergePatchType, patchBytes))
+
+		return err
+	})
+
 	if err != nil {
-		return res, log.Error(err, fmt.Sprintf("failed to update labels"))
+		return res, log.Error(err, "failed to update labels")
 	}
 
 	return res, nil
